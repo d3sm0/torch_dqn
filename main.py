@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import argparse
+import os
+from collections import deque
+
+import gym
+import numpy as np
 import torch
 import torch.optim as optim
-import gym_minigrid
-from gym_minigrid.wrappers import ImgObsWrapper
-import gym
 from gym.wrappers import Monitor
-import argparse
-import numpy as np
-import os
+from gym_minigrid.wrappers import ImgObsWrapper
 
 from misc_utils import Memory, Transition, one_hot, LinearSchedule
 from model import QNetwork
@@ -19,10 +20,12 @@ torch.set_default_tensor_type(torch.FloatTensor)
 
 def main(args):
     env = gym.make(args.env)
-    # env = ImgObsWrapper(env)
+    if 'MiniGrid' in args.env:
+        env = ImgObsWrapper(env)
     path = args.base_path + args.env
     os.makedirs(path, exist_ok=True)
-    obs_shape = np.prod(env.observation_space.shape).astype(int)
+    # obs_shape = np.prod(env.observation_space.shape).astype(int)
+    obs_shape = env.observation_space.shape
     act_shape = env.action_space.n
 
     q = QNetwork(obs_shape, act_shape)
@@ -31,13 +34,12 @@ def main(args):
     memory = Memory(capacity=args.memory)
     scheduler = LinearSchedule(schedule_timesteps=int(args.max_steps * 0.1), final_p=0.01)
 
-    from collections import deque
     avg_rw = deque(maxlen=40)
     avg_len = deque(maxlen=40)
 
     def get_action(s, t):
 
-        s = torch.Tensor(s[None, :])
+        s = torch.Tensor(s[None,:])
         _q = q(s)
         if np.random.sample() > scheduler.value:
             best_action = np.argmax(_q.detach(), axis=-1).item()
@@ -92,8 +94,6 @@ def main(args):
             q_target.load_state_dict(q.state_dict())
             print(f't:{t}\tep:{ep}\tavg_rw:{np.mean(avg_rw)}\tavg_len:{np.mean(avg_len)}\teps:{scheduler.value}')
 
-    env = gym.make(args.env)
-    env = ImgObsWrapper(env)
     env = Monitor(env, directory=path)
 
     for ep in range(4):
@@ -109,7 +109,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--env", default="CartPole-v1")
+    parser.add_argument("--env", default="MiniGrid-DoorKey-5x5-v0")
     parser.add_argument("--max_steps", default=int(1e6))
     parser.add_argument("--gamma", default=.99)
     parser.add_argument("--base_path", default='logs/')
